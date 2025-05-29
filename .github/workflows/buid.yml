@@ -33,7 +33,7 @@ jobs:
       - name: Checkout project repo
         uses: actions/checkout@v4
         with:
-          repository: SiliconLabsSoftware/${{ github.event.repository.name }}
+          repository: ${{ github.repository_owner }}/${{ github.event.repository.name }}
           ref: ${{ github.event.pull_request.head.ref }}
           path: 'projects'
           token: ${{ steps.app-token.outputs.token }}
