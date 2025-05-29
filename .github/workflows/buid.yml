@@ -1,0 +1,102 @@
+name: 05-Build-Firmware
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, edited]
+
+  # pull_request:
+  #   types: [opened, synchronize, edited]
+
+# env:
+  # SL_SLC_PATH: ${{ github.workspace }}/tools/slc_cli/slc
+  # SS_URL: https://github.com/silabs-CongD/tools/releases/download/v2.0/SimplicityStudio-5_linux.tgz
+  # SL_STUDIO_BUILD_PATH: ${{ github.workspace }}/tools/SimplicityStudio_v5
+  # ARM_GCC_DIR: ${{ github.workspace }}/tools/SimplicityStudio_v5/developer/toolchains/gnu_arm/arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi
+  # WORKSPACE: ${{ github.workspace }}
+  # CI_REPO_DIR: ${{ github.workspace }}/application_examples_ci
+  # repo: ${{ github.repository }}
+  # merge_branch: main
+
+jobs:
+  Build-Firmware:
+    runs-on: ubuntu-latest
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Create GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout project repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.user.login }}/${{ github.event.repository.name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          path: 'projects'
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Checkout scripts branch
+        uses: actions/checkout@v4
+        with:
+          repository: SiliconLabsSoftware/aep_ci_tools
+          ref: 'pull_request_process'
+          token: ${{ steps.app-token.outputs.token }}
+          path: 'pr_check'
+
+      - name: Poll the change
+        run: |
+          cd projects
+
+          if ${{ github.event.pull_request.head.user.login }} != SiliconLabsSoftware; then
+            git remote add upstream $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git
+            git fetch upstream
+            git diff --name-only upstream/main HEAD | grep '/' | cut -d'/' -f1 | sort | uniq > git_log.txt
+            grep -v "README.md\\|.github\\|LICENSE\\|templates.xml\\|tools" git_log.txt > git_diff.txt
+
+            xargs -I{} -a git_diff.txt find {} -type f -name "*.[ch]" > source_list.txt
+            xargs -I{} -a git_diff.txt find {} -type f -name "*.slcp" > solution_list.txt
+
+            if ! [ -s source_list.txt -o -s solution_list.txt ]; then
+              printf 'Skip check. No changed project found.' >> git_diff.txt
+            fi
+          
+          else
+            echo ${{ github.event.pull_request.head.user.login }}
+            export target_branch=${{ github.event.pull_request.base.ref }}
+            bash pr_check/scripts/check_changed_projects.sh $target_branch          
+          fi
+
+          # For debug
+          cat git_diff.txt
+
+          export REPO_NAME=$(echo $GITHUB_REPOSITORY | cut -d "/" -f 2)
+          echo "repo=$REPO_NAME" >> $GITHUB_ENV          
+
+      - name: Install tools
+        run: |
+          bash pr_check/scripts/install_tools.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'oracle'
+          java-version: '21'
+
+      ###########################################################
+      - name: Do check build
+        run: |
+          mkdir changed_projects
+          while read line; do cp -r ./projects/$line --parents ./changed_projects; done < projects/git_diff.txt
+
+          export SCRIPT_PATH=${{ github.workspace }}/pr_check/scripts/checkproject_sandbox.py
+          export PROJECT_PATH=${{ github.workspace }}/changed_projects
+          python3 -u $SCRIPT_PATH --junit --html --release --slcpgcc --sls $PROJECT_PATH
+
+          # cat ${{ github.workspace }}/build_test_project.log
+          GREP_COLORS='mt=32' grep --color=always 'Pass\|$' ${{ github.workspace }}/build_test_project.log | GREP_COLORS='mt=31' grep --color=always 'Fail\|$'
+          if grep -qe "Fail" ${{ github.workspace }}/build_test_project.log; then
+            echo "Build Firmware failed. Please check and fix it."
+            exit 1
+          fi
