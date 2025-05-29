@@ -1,23 +1,12 @@
-name: 05-Build-Firmware
+name: 04-Check-README
 
 on:
-  # pull_request_target:
-  #   types: [opened, synchronize, edited]
-
-  workflow_dispatch:
-
-env:
-  SL_SLC_PATH: ${{ github.workspace }}/tools/slc_cli/slc
-  CI_REPO_DIR: ${{ github.workspace }}/application_examples_ci
-  SL_STUDIO_BUILD_PATH: ${{ github.workspace }}/tools/SimplicityStudio_v5
-  STUDIO_ADAPTER_PACK_PATH: ${{ github.workspace }}/tools/SimplicityStudio_v5/developer/adapter_packs
-  POST_BUILD_EXE: ${{ github.workspace }}/tools/SimplicityStudio_v5/developer/adapter_packs/commander/commander
-  WORKSPACE: ${{ github.workspace }}
+  pull_request_target:
+    types: [opened, synchronize, edited]
 
 jobs:
-  Build-Firmware:
+  Check-README:
     runs-on: ubuntu-latest
-    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Create GitHub App Token
         id: app-token
@@ -46,7 +35,6 @@ jobs:
 
       - name: Poll the change
         run: |
-          
           if [[ ${{ github.event.pull_request.head.ref }} == "main" || ${{ github.event.pull_request.head.ref }} == "master" ]]; then
             rm -rf projects
             
@@ -75,30 +63,16 @@ jobs:
           cat git_diff.txt
 
           export REPO_NAME=$(echo $GITHUB_REPOSITORY | cut -d "/" -f 2)
-          echo "repo=$REPO_NAME" >> $GITHUB_ENV          
+          echo "repo=$REPO_NAME" >> $GITHUB_ENV  
 
-      - name: Install tools
+      - name: Check README.md files
         run: |
-          bash pr_check/scripts/install_tools.sh
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'oracle'
-          java-version: '21'
-
-      ###########################################################
-      - name: Do check build
-        run: |
-          mkdir changed_projects
-          while read line; do cp -r ./projects/$line --parents ./changed_projects; done < projects/git_diff.txt
-
-          export SCRIPT_PATH=${{ github.workspace }}/pr_check/scripts/checkproject_sandbox.py
-          export PROJECT_PATH=${{ github.workspace }}/changed_projects
-          python3 -u $SCRIPT_PATH --junit --html --release --slcpgcc --sls $PROJECT_PATH
-
-          # cat ${{ github.workspace }}/build_test_project.log
-          GREP_COLORS='mt=32' grep --color=always 'Pass\|$' ${{ github.workspace }}/build_test_project.log | GREP_COLORS='mt=31' grep --color=always 'Fail\|$'
-          if grep -qe "Fail" ${{ github.workspace }}/build_test_project.log; then
-            echo "Build Firmware failed. Please check and fix it."
+          cd projects
+          bash ${{ github.workspace }}/pr_check/scripts/check_readme_file_sandbox.sh git_diff.txt > readme_file_report.log
+          GREP_COLORS='mt=32' grep --color=always 'PASS\|$' readme_file_report.log | GREP_COLORS='mt=31' grep --color=always 'FAILURE\|$'
+          if grep -qe "FAILURE" readme_file_report.log; then
+            echo "README.md file did not follow standard structure. Pls correct it."
             exit 1
+          else
+            echo "README.md file followed standard structure"
           fi
