@@ -33,7 +33,7 @@ jobs:
       - name: Checkout project repo
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.event.pull_request.head.user.login }}/${{ github.event.repository.name }}
+          repository: SiliconLabsSoftware/${{ github.event.repository.name }}
           ref: ${{ github.event.pull_request.head.ref }}
           path: 'projects'
           token: ${{ steps.app-token.outputs.token }}
@@ -48,9 +48,13 @@ jobs:
 
       - name: Poll the change
         run: |
-          cd projects
+          
 
-          if ${{ github.event.pull_request.head.user.login }} != SiliconLabsSoftware; then
+          if [[ ${{ github.event.pull_request.head.ref }} == "main" || ${{ github.event.pull_request.head.ref }} == "master" ]]; then
+            rm -rf projects
+            
+            git clone https://github.com/${{ github.event.pull_request.head.user.login }}/${{ github.event.repository.name }}.git projects
+            cd projects
             git remote add upstream $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git
             git fetch upstream
             git diff --name-only upstream/main HEAD | grep '/' | cut -d'/' -f1 | sort | uniq > git_log.txt
@@ -64,6 +68,7 @@ jobs:
             fi
           
           else
+            # For internal
             echo ${{ github.event.pull_request.head.user.login }}
             export target_branch=${{ github.event.pull_request.base.ref }}
             bash pr_check/scripts/check_changed_projects.sh $target_branch          
