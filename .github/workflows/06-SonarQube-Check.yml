@@ -33,9 +33,9 @@ jobs:
       - name: Check repo owner
         run: |
           if [[ ${{ github.event.pull_request.head.ref }} == "main" || ${{ github.event.pull_request.head.ref }} == "master" ]]; then
-            REPOSITORY=${{ github.event.pull_request.head.user.login }}/${{ github.event.repository.name }}
+            export REPOSITORY=${{ github.event.pull_request.head.user.login }}/${{ github.event.repository.name }}
           else
-            REPOSITORY=$GITHUB_REPOSITORY
+            export REPOSITORY=$GITHUB_REPOSITORY
           fi
 
           echo "repo_name=$REPOSITORY" >> $GITHUB_ENV
@@ -43,13 +43,17 @@ jobs:
       - name: Trigger Workflow
         id: trigger
         run: |
+          echo ${{ env.repo_name }}
+          echo ${{ github.event.pull_request.head.ref }}
+          echo ${{ github.event.pull_request.base.ref }}
+          echo ${{ github.event.pull_request.number }}
+          echo 0000000000000
 
           response=$(curl -X POST \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ steps.app-token.outputs.token }}" \
             https://api.github.com/repos/SiliconLabsSoftware/aep_ci_tools/actions/workflows/bluetooth_trigger_sonar.yml/dispatches \
-            -d '{"ref":"main", "inputs":{"repository": "${{ env.repo_name }}" ,"src_branch":"${{ github.event.pull_request.head.ref }}", \
-            "dest_branch":"${{ github.event.pull_request.base.ref }}", "pr_id":"${{ github.event.pull_request.number }}" }}')
+            -d '{"ref":"main", "inputs":{"repository":"${{ env.repo_name }}","src_branch":"${{ github.event.pull_request.head.ref }}","dest_branch":"${{ github.event.pull_request.base.ref }}", "pr_id":"${{ github.event.pull_request.number }}" }}')
 
           echo "Triggered workflow: $response"
           if echo "$response" | grep -q '"message": "Not Found"'; then
